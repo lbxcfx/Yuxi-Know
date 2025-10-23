@@ -71,7 +71,7 @@ class Config(SimpleConfig):
 
         self.add_item(
             "embed_model",
-            default="siliconflow/BAAI/bge-m3",
+            default="dashscope/text-embedding-v4",
             des="Embedding 模型",
             choices=list(self.embed_model_names.keys()),
         )
@@ -144,18 +144,28 @@ class Config(SimpleConfig):
             yaml.safe_dump(models_payload, f, indent=2, allow_unicode=True, sort_keys=False)
 
     def _get_default_chat_model_spec(self):
-        """选择一个默认的聊天模型，优先使用 siliconflow 的默认模型"""
-        preferred_provider = "siliconflow"
-        provider_info = (self.model_names or {}).get(preferred_provider)
-        if provider_info:
-            default_model = provider_info.get("default")
-            if default_model:
-                return f"{preferred_provider}/{default_model}"
+        """选择一个默认的聊天模型，优先使用已配置API KEY的提供商"""
+        # 优先级顺序: dashscope > siliconflow > 其他已配置的提供商
+        preferred_order = ["dashscope", "siliconflow"]
 
+        # 首先尝试优先级列表中已配置的提供商
+        for preferred_provider in preferred_order:
+            provider_info = (self.model_names or {}).get(preferred_provider)
+            if provider_info:
+                env_var = provider_info.get("env")
+                # 检查环境变量是否已配置
+                if env_var and (env_var == "NO_API_KEY" or os.getenv(env_var)):
+                    default_model = provider_info.get("default")
+                    if default_model:
+                        return f"{preferred_provider}/{default_model}"
+
+        # 如果优先列表中没有可用的,则选择第一个已配置的提供商
         for provider, info in (self.model_names or {}).items():
-            default_model = info.get("default")
-            if default_model:
-                return f"{provider}/{default_model}"
+            env_var = info.get("env")
+            if env_var and (env_var == "NO_API_KEY" or os.getenv(env_var)):
+                default_model = info.get("default")
+                if default_model:
+                    return f"{provider}/{default_model}"
 
         return ""
 

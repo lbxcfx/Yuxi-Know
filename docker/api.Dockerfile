@@ -46,8 +46,8 @@ ENV HTTP_PROXY=$HTTP_PROXY \
     https_proxy=$HTTPS_PROXY
 
 # 如果网络还是不好，可以在后面添加 --index-url https://pypi.tuna.tsinghua.edu.cn/simple
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --no-dev
+# 临时禁用缓存挂载以确保使用最新的 pyproject.toml
+RUN uv sync --no-dev
 
 # 激活虚拟环境并添加到PATH
 ENV PATH="/app/.venv/bin:$PATH"

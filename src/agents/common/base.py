@@ -57,7 +57,7 @@ class BaseAgent:
             yield event["messages"]
 
     async def stream_messages(self, messages: list[str], input_context=None, **kwargs):
-        graph = await self.get_graph()
+        graph = await self.get_graph(input_context=input_context)
         context = self.context_schema.from_file(module_name=self.module_name, input_context=input_context)
         logger.debug(f"stream_messages: {context}")
         # TODO Checkpointer 似乎还没有适配最新的 1.0 Context API

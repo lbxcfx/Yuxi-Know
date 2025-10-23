@@ -235,12 +235,118 @@ class OCRPlugin:
     def process_file_mineru(self, file_path, params=None):
         """
         使用Mineru OCR处理文件
+        支持两种模式：
+        1. 远程 API 模式：使用 MINERU_API_KEY 调用官方 API (https://mineru.net)
+        2. 本地服务模式：使用 MINERU_OCR_URI 调用本地容器服务
+
         :param file_path: 文件路径
         :param params: 参数
         :return: 提取的文本
         """
         import requests
 
+        # 检查是否配置了 API Key（优先使用远程 API）
+        mineru_api_key = os.getenv("MINERU_API_KEY", "")
+
+        if mineru_api_key:
+            # 使用远程 API
+            return self._process_file_mineru_api(file_path, mineru_api_key, params)
+        else:
+            # 使用本地服务
+            return self._process_file_mineru_local(file_path, params)
+
+    def _process_file_mineru_api(self, file_path, api_key, params=None):
+        """
+        使用 MinerU 官方 API 处理文件
+        API 文档: https://mineru.net
+        """
+        import requests
+        import json
+        from src.storage.minio_storage import MinioStorage
+
+        mineru_api_url = os.getenv("MINERU_API_URL", "https://mineru.net/api/v4/extract/task")
+
+        try:
+            start_time = time.time()
+
+            # 1. 上传文件到 MinIO 获取公开访问 URL
+            # 如果文件已经是 URL，直接使用
+            if file_path.startswith("http://") or file_path.startswith("https://"):
+                file_url = file_path
+            else:
+                # 上传到 MinIO
+                minio = MinioStorage()
+                # 使用临时存储桶上传文件
+                file_url = minio.upload_file_and_get_url(file_path, bucket_name="temp-ocr")
+
+            logger.info(f"准备使用 MinerU API 处理文件: {file_url}")
+
+            # 2. 调用 MinerU API
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}"
+            }
+
+            data = {
+                "url": file_url,
+                "is_ocr": params.get("is_ocr", True) if params else True,
+                "enable_formula": params.get("enable_formula", False) if params else False,
+            }
+
+            logger.debug(f"调用 MinerU API: {mineru_api_url}")
+            response = requests.post(mineru_api_url, headers=headers, json=data, timeout=300)
+
+            if response.status_code != 200:
+                error_msg = f"MinerU API 调用失败: HTTP {response.status_code}"
+                try:
+                    error_detail = response.json()
+                    error_msg = f"{error_msg} - {error_detail}"
+                except:
+                    error_msg = f"{error_msg} - {response.text}"
+
+                raise OCRServiceException(error_msg, "mineru_api", "api_error")
+
+            # 3. 解析响应
+            result = response.json()
+
+            if result.get("code") != 200:
+                error_msg = f"MinerU API 返回错误: {result.get('message', 'Unknown error')}"
+                raise OCRServiceException(error_msg, "mineru_api", "api_error")
+
+            # 4. 获取提取的文本
+            data_url = result.get("data", "")
+            if not data_url:
+                raise OCRServiceException("MinerU API 未返回数据", "mineru_api", "no_data")
+
+            # 5. 下载结果（data 字段包含结果文件的 URL）
+            result_response = requests.get(data_url, timeout=60)
+            if result_response.status_code != 200:
+                raise OCRServiceException(f"下载 MinerU 结果失败: HTTP {result_response.status_code}", "mineru_api", "download_error")
+
+            # 6. 解析结果（通常是 markdown 格式）
+            text = result_response.text
+
+            processing_time = time.time() - start_time
+            log_ocr_request("mineru_api", file_path, True, processing_time)
+
+            logger.info(f"✓ MinerU API 处理成功，提取 {len(text)} 个字符，耗时 {processing_time:.2f}s")
+            logger.debug(f"MinerU API result preview: {text[:200]}...")
+
+            return text
+
+        except OCRServiceException:
+            raise
+        except Exception as e:
+            processing_time = time.time() - start_time if 'start_time' in locals() else 0
+            error_msg = f"MinerU API 处理失败: {str(e)}"
+            log_ocr_request("mineru_api", file_path, False, processing_time, error_msg)
+            raise OCRServiceException(error_msg, "mineru_api", "processing_failed")
+
+    def _process_file_mineru_local(self, file_path, params=None):
+        """
+        使用本地 MinerU 服务处理文件
+        """
+        import requests
         from .mineru import parse_doc
 
         mineru_ocr_uri = os.getenv("MINERU_OCR_URI", "http://localhost:30000")
@@ -257,13 +363,13 @@ class OCRPlugin:
                     error_detail = health_check_response.text
 
                 raise OCRServiceException(
-                    f"MinerU OCR服务健康检查失败: {error_detail}", "mineru_ocr", "health_check_failed"
+                    f"MinerU 本地服务健康检查失败: {error_detail}", "mineru_local", "health_check_failed"
                 )
 
         except Exception as e:
             if isinstance(e, OCRServiceException):
                 raise
-            raise OCRServiceException(f"MinerU OCR服务检查失败: {str(e)}", "mineru_ocr", "service_error")
+            raise OCRServiceException(f"MinerU 本地服务检查失败: {str(e)}", "mineru_local", "service_error")
 
         try:
             start_time = time.time()
@@ -273,17 +379,17 @@ class OCRPlugin:
             text = parse_doc(file_path_list, output_dir, backend="vlm-sglang-client", server_url=mineru_ocr_uri)[0]
 
             processing_time = time.time() - start_time
-            log_ocr_request("mineru_ocr", file_path, True, processing_time)
+            log_ocr_request("mineru_local", file_path, True, processing_time)
 
-            logger.debug(f"Mineru OCR result: {text[:50]}(...) total {len(text)} characters.")
+            logger.debug(f"MinerU 本地服务处理结果: {text[:50]}(...) 共 {len(text)} 个字符")
             return text
 
         except Exception as e:
             processing_time = time.time() - start_time
-            error_msg = f"MinerU OCR处理失败: {str(e)}"
-            log_ocr_request("mineru_ocr", file_path, False, processing_time, error_msg)
+            error_msg = f"MinerU 本地服务处理失败: {str(e)}"
+            log_ocr_request("mineru_local", file_path, False, processing_time, error_msg)
 
-            raise OCRServiceException(error_msg, "mineru_ocr", "processing_failed")
+            raise OCRServiceException(error_msg, "mineru_local", "processing_failed")
 
     def process_file_paddlex(self, pdf_path, params=None):
         """

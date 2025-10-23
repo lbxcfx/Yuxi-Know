@@ -19,15 +19,21 @@ MCP_SERVERS = {
         "transport": "streamable_http",
     },
     # 这些 stdio 的 MCP server 需要在本地启动，启动的时候需要安装对应的包，需要时间
-    # "time": {
-    #     "command": "uvx",
-    #     "args": ["mcp-server-time"],
-    #     "transport": "stdio",
-    # },
-    # "mcp-server-chart": {
-    #     "url": "https://mcp.api-inference.modelscope.net/9993ae42524c4c/mcp",
-    #     "transport": "streamable_http",
-    # },
+    "time": {
+        "command": "uvx",
+        "args": ["mcp-server-time"],
+        "transport": "stdio",
+    },
+    "mcp-server-chart": {
+        "url": "https://mcp.api-inference.modelscope.net/9993ae42524c4c/mcp",
+        "transport": "streamable_http",
+    },
+    # Python 代码执行服务器 - 在隔离目录中执行 Python 代码
+    "python": {
+        "command": "uvx",
+        "args": ["mcp-python-interpreter", "--dir", "/tmp/mcp-python"],
+        "transport": "stdio",
+    },
     # 需要在 docker 内安装 npx
     # "mysql": {
     #     "command": "npx",

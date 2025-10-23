@@ -634,6 +634,234 @@ async def mark_it_down(file: UploadFile = File(...), current_user: User = Depend
 
 
 # =============================================================================
+# === MySQL 数据导入分组 ===
+# =============================================================================
+
+
+@knowledge.post("/mysql/preview")
+async def preview_table_data(file: UploadFile = File(...), current_user: User = Depends(get_admin_user)):
+    """预览 Excel/CSV 文件的全部数据"""
+    import pandas as pd
+    from io import BytesIO
+
+    logger.debug(f"Preview table data from file: {file.filename}")
+
+    try:
+        # 检查文件类型
+        ext = os.path.splitext(file.filename)[1].lower()
+        if ext not in [".csv", ".xlsx", ".xls"]:
+            raise HTTPException(status_code=400, detail=f"不支持的文件类型: {ext}，仅支持 .csv, .xlsx, .xls")
+
+        # 读取文件内容
+        content = await file.read()
+        file_buffer = BytesIO(content)
+
+        # 根据文件类型加载数据
+        if ext == ".csv":
+            # 尝试多种编码
+            try:
+                df = pd.read_csv(file_buffer, encoding="utf-8")
+            except UnicodeDecodeError:
+                file_buffer.seek(0)
+                try:
+                    df = pd.read_csv(file_buffer, encoding="gbk")
+                except UnicodeDecodeError:
+                    file_buffer.seek(0)
+                    df = pd.read_csv(file_buffer, encoding="latin1")
+        elif ext in [".xlsx", ".xls"]:
+            df = pd.read_excel(file_buffer)
+        else:
+            raise HTTPException(status_code=400, detail=f"不支持的文件格式: {ext}")
+
+        # 替换 NaN 为 None（JSON 兼容）
+        df = df.where(pd.notnull(df), None)
+
+        # 获取列信息
+        columns_info = []
+        for col in df.columns:
+            dtype = str(df[col].dtype)
+            columns_info.append({"name": col, "type": dtype})
+
+        # 转换为字典列表（全部数据）
+        data = df.to_dict(orient="records")
+
+        return {
+            "message": "success",
+            "filename": file.filename,
+            "total_rows": len(df),
+            "total_columns": len(df.columns),
+            "columns": columns_info,
+            "data": data,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"预览表格数据失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"预览表格数据失败: {e}")
+
+
+@knowledge.post("/mysql/import")
+async def import_to_mysql(
+    file_path: str = Body(...),
+    table_name: str = Body(...),
+    create_table: bool = Body(True),
+    drop_if_exists: bool = Body(False),
+    batch_size: int = Body(1000),
+    current_user: User = Depends(get_admin_user),
+):
+    """将上传的 Excel/CSV 文件导入到 MySQL"""
+    import pandas as pd
+    import pymysql
+    from pathlib import Path
+
+    logger.debug(f"Import file to MySQL: {file_path} -> {table_name}")
+
+    try:
+        # 验证文件存在
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=404, detail=f"文件不存在: {file_path}")
+
+        # 验证文件类型
+        ext = Path(file_path).suffix.lower()
+        if ext not in [".csv", ".xlsx", ".xls"]:
+            raise HTTPException(status_code=400, detail=f"不支持的文件类型: {ext}")
+
+        # 加载数据
+        if ext == ".csv":
+            try:
+                df = pd.read_csv(file_path, encoding="utf-8")
+            except UnicodeDecodeError:
+                try:
+                    df = pd.read_csv(file_path, encoding="gbk")
+                except UnicodeDecodeError:
+                    df = pd.read_csv(file_path, encoding="latin1")
+        else:
+            df = pd.read_excel(file_path)
+
+        # 处理列名（替换空格和特殊字符）
+        df.columns = [col.replace(" ", "_").replace("-", "_") for col in df.columns]
+
+        # 替换 NaN 为 None
+        df = df.where(pd.notnull(df), None)
+
+        # 连接 MySQL
+        mysql_config = {
+            "host": os.getenv("MYSQL_HOST", "localhost"),
+            "user": os.getenv("MYSQL_USER", "root"),
+            "password": os.getenv("MYSQL_PASSWORD", ""),
+            "database": os.getenv("MYSQL_DATABASE", "testdb"),
+            "port": int(os.getenv("MYSQL_PORT", "3306")),
+            "charset": "utf8mb4",
+        }
+
+        connection = pymysql.connect(**mysql_config)
+        cursor = connection.cursor()
+
+        try:
+            # 检查表是否存在
+            cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+            table_exists = cursor.fetchone() is not None
+
+            # 如果需要创建表
+            if create_table:
+                if table_exists and drop_if_exists:
+                    logger.info(f"删除已存在的表: {table_name}")
+                    cursor.execute(f"DROP TABLE `{table_name}`")
+                    table_exists = False
+
+                if not table_exists:
+                    # 推断列类型
+                    def infer_mysql_type(dtype, max_length=None):
+                        dtype_str = str(dtype)
+                        if "int" in dtype_str:
+                            return "BIGINT"
+                        elif "float" in dtype_str:
+                            return "DOUBLE"
+                        elif "bool" in dtype_str:
+                            return "BOOLEAN"
+                        elif "datetime" in dtype_str:
+                            return "DATETIME"
+                        elif "date" in dtype_str:
+                            return "DATE"
+                        else:
+                            if max_length and max_length < 255:
+                                return f"VARCHAR({max(255, max_length + 50)})"
+                            else:
+                                return "TEXT"
+
+                    # 构建列定义
+                    columns = []
+                    for col in df.columns:
+                        dtype = df[col].dtype
+                        max_length = None
+                        if dtype == "object":
+                            max_length = df[col].astype(str).str.len().max()
+                        mysql_type = infer_mysql_type(dtype, max_length)
+                        columns.append(f"`{col}` {mysql_type}")
+
+                    # 添加自增主键
+                    columns.insert(0, "`id` BIGINT AUTO_INCREMENT PRIMARY KEY")
+
+                    # 创建表
+                    create_sql = f"""
+                    CREATE TABLE `{table_name}` (
+                        {', '.join(columns)}
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    """
+                    cursor.execute(create_sql)
+                    connection.commit()
+                    logger.info(f"✓ 表 {table_name} 创建成功")
+
+            elif not table_exists:
+                raise HTTPException(status_code=400, detail=f"表 {table_name} 不存在，请启用 create_table 选项")
+
+            # 导入数据
+            columns_str = ", ".join([f"`{col}`" for col in df.columns])
+            placeholders = ", ".join(["%s"] * len(df.columns))
+            insert_sql = f"INSERT INTO `{table_name}` ({columns_str}) VALUES ({placeholders})"
+
+            total_rows = len(df)
+            inserted = 0
+
+            for i in range(0, total_rows, batch_size):
+                batch = df.iloc[i : i + batch_size]
+                data = [tuple(row) for row in batch.values]
+                cursor.executemany(insert_sql, data)
+                connection.commit()
+                inserted += len(batch)
+                logger.info(f"已导入 {inserted}/{total_rows} 行 ({inserted/total_rows*100:.1f}%)")
+
+            # 验证导入结果
+            cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`")
+            count = cursor.fetchone()[0]
+
+            cursor.close()
+            connection.close()
+
+            return {
+                "message": "导入成功",
+                "status": "success",
+                "table_name": table_name,
+                "total_rows": total_rows,
+                "inserted_rows": inserted,
+                "final_count": count,
+            }
+
+        except Exception as e:
+            connection.rollback()
+            cursor.close()
+            connection.close()
+            raise HTTPException(status_code=500, detail=f"数据导入失败: {e}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"导入到 MySQL 失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"导入失败: {e}")
+
+
+# =============================================================================
 # === 知识库类型分组 ===
 # =============================================================================
 

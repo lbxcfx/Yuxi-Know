@@ -65,9 +65,10 @@ MODEL_NAMES:
     name: 阿里百炼 (DashScope)
     url: https://bailian.console.aliyun.com/?switchAgent=10226727&productCode=p_efm#/model-market
     base_url: https://dashscope.aliyuncs.com/compatible-mode/v1
-    default: qwen-max-latest
+    default: qwen-max
     env: DASHSCOPE_API_KEY
     models:
+      - qwen-max
       - qwen-max-latest
       - qwen-plus-latest
       - qwen-turbo-latest
@@ -98,6 +99,12 @@ MODEL_NAMES:
       - anthropic/claude-sonnet-4
 
 EMBED_MODEL_INFO:
+  dashscope/text-embedding-v4:
+    name: text-embedding-v4
+    dimension: 1024
+    base_url: https://dashscope.aliyuncs.com/compatible-mode/v1/embeddings
+    api_key: DASHSCOPE_API_KEY
+
   siliconflow/BAAI/bge-m3:
     name: BAAI/bge-m3
     dimension: 1024
