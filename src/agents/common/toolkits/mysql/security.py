@@ -73,8 +73,19 @@ class MySQLSecurityChecker:
         if not table_name:
             return False
 
-        # 检查表名只包含字母、数字、下划线
-        return bool(re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", table_name))
+        # 检查表名长度（MySQL 表名最大 64 字符）
+        if len(table_name) > 64:
+            return False
+
+        # 检查是否包含危险字符（只需排除可能导致 SQL 注入的特殊字符）
+        # 允许：字母、数字、下划线、中文字符、连字符
+        # 不允许：分号、引号、反引号、括号、空格等可能导致注入的字符
+        dangerous_chars = [";", "'", '"', "`", "(", ")", " ", "\t", "\n", "\r", "\\", "/", "*", "=", "<", ">"]
+        for char in dangerous_chars:
+            if char in table_name:
+                return False
+
+        return True
 
     @classmethod
     def validate_limit(cls, limit: int) -> bool:
