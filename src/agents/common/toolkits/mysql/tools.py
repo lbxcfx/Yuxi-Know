@@ -198,7 +198,9 @@ def mysql_query(
 
         # 如果SQL中没有LIMIT，添加LIMIT子句
         if "LIMIT" not in sql.upper() and "limit" not in sql:
-            sql_upper = sql.strip().upper()
+            # 移除末尾的分号（如果有）
+            sql = sql.strip().rstrip(';')
+            sql_upper = sql.upper()
             # 确保是SELECT语句才添加LIMIT
             if sql_upper.startswith("SELECT"):
                 sql = f"{sql} LIMIT {limit}"

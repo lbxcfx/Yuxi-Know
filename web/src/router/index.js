@@ -104,6 +104,25 @@ const router = createRouter({
       ]
     },
     {
+      path: '/data-tables',
+      name: 'dataTables',
+      component: AppLayout,
+      children: [
+        {
+          path: '',
+          name: 'DataTablesComp',
+          component: () => import('../views/DataTablesView.vue'),
+          meta: { keepAlive: true, requiresAuth: true, requiresAdmin: true }
+        },
+        {
+          path: ':tableName',
+          name: 'DataTableDetailComp',
+          component: () => import('../views/DataTableDetailView.vue'),
+          meta: { keepAlive: false, requiresAuth: true, requiresAdmin: true }
+        }
+      ]
+    },
+    {
       path: '/:pathMatch(.*)*',
       name: 'NotFound',
       component: () => import('../views/EmptyView.vue'),

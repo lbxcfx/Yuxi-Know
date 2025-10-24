@@ -202,7 +202,7 @@ class ChromaKB(KnowledgeBase):
                     ids = [chunk["id"] for chunk in chunks]
 
                     # 插入到 ChromaDB - 分批处理以避免超出 OpenAI 批次大小限制
-                    batch_size = 64  # OpenAI 的最大批次大小限制
+                    batch_size = 10  # 适配不同 API 的批次大小限制（如通义千问等）
                     total_batches = (len(chunks) + batch_size - 1) // batch_size
 
                     for i in range(0, len(chunks), batch_size):

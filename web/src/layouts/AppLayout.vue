@@ -5,7 +5,7 @@ import {
   GithubOutlined,
   ExclamationCircleOutlined,
 } from '@ant-design/icons-vue'
-import { Bot, Waypoints, LibraryBig, Settings, BarChart3, BookOpen, ListChecks } from 'lucide-vue-next';
+import { Bot, Waypoints, LibraryBig, Settings, BarChart3, BookOpen, ListChecks, Table2 } from 'lucide-vue-next';
 import { onLongPress } from '@vueuse/core'
 
 import { useConfigStore } from '@/stores/config'
@@ -111,6 +111,11 @@ const mainList = [{
     icon: LibraryBig,
     activeIcon: LibraryBig,
   }, {
+    name: '数据表',
+    path: '/data-tables',
+    icon: Table2,
+    activeIcon: Table2,
+  }, {
     name: 'Dashboard',
     path: '/dashboard',
     icon: BarChart3,
@@ -166,7 +171,8 @@ const mainList = [{
       ></div>
 
 
-      <div class="github nav-item">
+      <!-- GitHub Star 已隐藏 -->
+      <!-- <div class="github nav-item">
         <a-tooltip placement="right">
           <template #title>欢迎 Star</template>
           <a href="https://github.com/xerrors/Yuxi-Know" target="_blank" class="github-link">
@@ -176,7 +182,7 @@ const mainList = [{
             </span>
           </a>
         </a-tooltip>
-      </div>
+      </div> -->
       <div class="nav-item docs">
         <a-tooltip placement="right">
           <template #title>文档中心</template>

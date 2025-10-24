@@ -861,6 +861,260 @@ async def import_to_mysql(
         raise HTTPException(status_code=500, detail=f"导入失败: {e}")
 
 
+@knowledge.get("/mysql/tables")
+async def get_mysql_tables(current_user: User = Depends(get_admin_user)):
+    """获取 MySQL 数据库中的所有表及其统计信息"""
+    import pymysql
+    from datetime import datetime
+
+    logger.debug("Getting MySQL tables list")
+
+    try:
+        # 连接 MySQL
+        mysql_config = {
+            "host": os.getenv("MYSQL_HOST", "localhost"),
+            "user": os.getenv("MYSQL_USER", "root"),
+            "password": os.getenv("MYSQL_PASSWORD", ""),
+            "database": os.getenv("MYSQL_DATABASE", "testdb"),
+            "port": int(os.getenv("MYSQL_PORT", "3306")),
+            "charset": "utf8mb4",
+        }
+
+        connection = pymysql.connect(**mysql_config)
+        cursor = connection.cursor()
+
+        # 获取所有表
+        cursor.execute("SHOW TABLES")
+        tables = cursor.fetchall()
+
+        # 获取每个表的详细信息
+        table_list = []
+        for (table_name,) in tables:
+            # 获取行数
+            cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`")
+            row_count = cursor.fetchone()[0]
+
+            # 获取列数和列信息
+            cursor.execute(f"SHOW COLUMNS FROM `{table_name}`")
+            columns = cursor.fetchall()
+            column_count = len(columns)
+
+            # 获取表创建时间
+            cursor.execute(f"SHOW TABLE STATUS LIKE '{table_name}'")
+            table_status = cursor.fetchone()
+            create_time = table_status[11] if table_status and len(table_status) > 11 else None  # Create_time
+
+            table_list.append(
+                {
+                    "name": table_name,
+                    "row_count": row_count,
+                    "column_count": column_count,
+                    "create_time": create_time.isoformat() if create_time else None,
+                    "columns": [col[0] for col in columns],  # 列名列表
+                }
+            )
+
+        cursor.close()
+        connection.close()
+
+        return {"message": "success", "tables": table_list, "total": len(table_list)}
+
+    except Exception as e:
+        logger.error(f"获取 MySQL 表列表失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"获取表列表失败: {e}")
+
+
+@knowledge.get("/mysql/tables/{table_name}")
+async def get_table_info(table_name: str, current_user: User = Depends(get_admin_user)):
+    """获取指定表的详细信息（表结构）"""
+    import pymysql
+
+    logger.debug(f"Getting table info for {table_name}")
+
+    try:
+        # 连接 MySQL
+        mysql_config = {
+            "host": os.getenv("MYSQL_HOST", "localhost"),
+            "user": os.getenv("MYSQL_USER", "root"),
+            "password": os.getenv("MYSQL_PASSWORD", ""),
+            "database": os.getenv("MYSQL_DATABASE", "testdb"),
+            "port": int(os.getenv("MYSQL_PORT", "3306")),
+            "charset": "utf8mb4",
+        }
+
+        connection = pymysql.connect(**mysql_config)
+        cursor = connection.cursor()
+
+        # 检查表是否存在
+        cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail=f"表 {table_name} 不存在")
+
+        # 获取表结构
+        cursor.execute(f"DESCRIBE `{table_name}`")
+        columns_raw = cursor.fetchall()
+        columns = [
+            {
+                "name": col[0],
+                "type": col[1],
+                "null": col[2] == "YES",
+                "key": col[3],
+                "default": col[4],
+                "extra": col[5],
+            }
+            for col in columns_raw
+        ]
+
+        # 获取行数
+        cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`")
+        row_count = cursor.fetchone()[0]
+
+        # 获取表状态信息
+        cursor.execute(f"SHOW TABLE STATUS LIKE '{table_name}'")
+        table_status = cursor.fetchone()
+        create_time = table_status[11] if table_status and len(table_status) > 11 else None
+        engine = table_status[1] if table_status and len(table_status) > 1 else None
+        collation = table_status[14] if table_status and len(table_status) > 14 else None
+
+        cursor.close()
+        connection.close()
+
+        return {
+            "message": "success",
+            "table_name": table_name,
+            "row_count": row_count,
+            "column_count": len(columns),
+            "columns": columns,
+            "create_time": create_time.isoformat() if create_time else None,
+            "engine": engine,
+            "collation": collation,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取表信息失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"获取表信息失败: {e}")
+
+
+@knowledge.get("/mysql/tables/{table_name}/data")
+async def get_table_data(
+    table_name: str,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: User = Depends(get_admin_user),
+):
+    """获取表数据（分页）"""
+    import pymysql
+
+    logger.debug(f"Getting data from table {table_name}, offset={offset}, limit={limit}")
+
+    try:
+        # 连接 MySQL
+        mysql_config = {
+            "host": os.getenv("MYSQL_HOST", "localhost"),
+            "user": os.getenv("MYSQL_USER", "root"),
+            "password": os.getenv("MYSQL_PASSWORD", ""),
+            "database": os.getenv("MYSQL_DATABASE", "testdb"),
+            "port": int(os.getenv("MYSQL_PORT", "3306")),
+            "charset": "utf8mb4",
+        }
+
+        connection = pymysql.connect(**mysql_config)
+        cursor = connection.cursor()
+
+        # 检查表是否存在
+        cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail=f"表 {table_name} 不存在")
+
+        # 获取列信息
+        cursor.execute(f"DESCRIBE `{table_name}`")
+        columns_info = cursor.fetchall()
+        column_names = [col[0] for col in columns_info]
+
+        # 获取总行数
+        cursor.execute(f"SELECT COUNT(*) FROM `{table_name}`")
+        total_count = cursor.fetchone()[0]
+
+        # 获取数据
+        cursor.execute(f"SELECT * FROM `{table_name}` LIMIT {limit} OFFSET {offset}")
+        rows = cursor.fetchall()
+
+        # 转换为字典列表
+        data = []
+        for row in rows:
+            row_dict = {}
+            for i, col_name in enumerate(column_names):
+                value = row[i]
+                # 处理日期时间类型
+                if hasattr(value, "isoformat"):
+                    value = value.isoformat()
+                row_dict[col_name] = value
+            data.append(row_dict)
+
+        cursor.close()
+        connection.close()
+
+        return {
+            "message": "success",
+            "table_name": table_name,
+            "columns": column_names,
+            "data": data,
+            "total": total_count,
+            "offset": offset,
+            "limit": limit,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取表数据失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"获取表数据失败: {e}")
+
+
+@knowledge.delete("/mysql/tables/{table_name}")
+async def delete_table(table_name: str, current_user: User = Depends(get_admin_user)):
+    """删除 MySQL 表"""
+    import pymysql
+
+    logger.debug(f"Deleting table {table_name}")
+
+    try:
+        # 连接 MySQL
+        mysql_config = {
+            "host": os.getenv("MYSQL_HOST", "localhost"),
+            "user": os.getenv("MYSQL_USER", "root"),
+            "password": os.getenv("MYSQL_PASSWORD", ""),
+            "database": os.getenv("MYSQL_DATABASE", "testdb"),
+            "port": int(os.getenv("MYSQL_PORT", "3306")),
+            "charset": "utf8mb4",
+        }
+
+        connection = pymysql.connect(**mysql_config)
+        cursor = connection.cursor()
+
+        # 检查表是否存在
+        cursor.execute(f"SHOW TABLES LIKE '{table_name}'")
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail=f"表 {table_name} 不存在")
+
+        # 删除表
+        cursor.execute(f"DROP TABLE `{table_name}`")
+        connection.commit()
+
+        cursor.close()
+        connection.close()
+
+        return {"message": f"表 {table_name} 已成功删除", "status": "success"}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除表失败 {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"删除表失败: {e}")
+
+
 # =============================================================================
 # === 知识库类型分组 ===
 # =============================================================================

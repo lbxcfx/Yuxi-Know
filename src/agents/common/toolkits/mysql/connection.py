@@ -97,43 +97,56 @@ class MySQLConnectionManager:
     def get_cursor(self):
         """获取数据库游标的上下文管理器"""
         max_retries = 2
+        last_error = None
+
         for attempt in range(max_retries):
+            cursor = None
             try:
                 connection = self._get_connection()
                 cursor = connection.cursor()
 
-                try:
-                    yield cursor
-                    connection.commit()
-                    break  # 成功，退出重试循环
-
-                except Exception as e:
-                    connection.rollback()
-
-                    # 如果是连接错误，尝试重新连接
-                    if "MySQL" in str(e) or "connection" in str(e).lower():
-                        if attempt < max_retries - 1:
-                            logger.warning(f"Connection error, retrying (attempt {attempt + 1}): {e}")
-                            # 强制重新连接
-                            if self.connection:
-                                try:
-                                    self.connection.close()
-                                except Exception as _:
-                                    pass
-                            self.connection = None
-                            time.sleep(1)
-                            continue
-
-                    raise e  # 其他错误直接抛出
-
-                finally:
-                    if cursor:
-                        cursor.close()
+                yield cursor
+                connection.commit()
+                return  # 成功，正常退出
 
             except Exception as e:
-                if attempt == max_retries - 1:
-                    raise e  # 最后一次尝试失败，抛出异常
-                time.sleep(1)
+                # 记录最后一次错误
+                last_error = e
+
+                # 回滚事务
+                try:
+                    if connection:
+                        connection.rollback()
+                except Exception:
+                    pass
+
+                # 如果是连接错误且还有重试机会，尝试重新连接
+                if ("MySQL" in str(e) or "connection" in str(e).lower()) and attempt < max_retries - 1:
+                    logger.warning(f"Connection error, retrying (attempt {attempt + 1}): {e}")
+                    # 强制重新连接
+                    if self.connection:
+                        try:
+                            self.connection.close()
+                        except Exception:
+                            pass
+                    self.connection = None
+                    time.sleep(1)
+                    # 继续下一次重试
+                else:
+                    # 其他错误或最后一次重试，直接抛出
+                    raise
+
+            finally:
+                # 确保关闭游标
+                if cursor:
+                    try:
+                        cursor.close()
+                    except Exception:
+                        pass
+
+        # 如果所有重试都失败，抛出最后一次错误
+        if last_error:
+            raise last_error
 
     def close(self):
         """关闭数据库连接"""

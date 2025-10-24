@@ -168,11 +168,8 @@ export const fileApi = {
       ? `/api/knowledge/files/upload?db_id=${dbId}`
       : '/api/knowledge/files/upload'
 
-    return apiAdminPost(url, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data'
-      }
-    })
+    // 不要手动设置 Content-Type，让浏览器自动设置 multipart/form-data 和 boundary
+    return apiAdminPost(url, formData)
   },
 
   /**
@@ -226,5 +223,81 @@ export const embeddingApi = {
    */
   getAllModelsStatus: async () => {
     return apiAdminGet('/api/knowledge/embedding-models/status')
+  }
+}
+
+// =============================================================================
+// === MySQL 数据表管理分组 ===
+// =============================================================================
+
+export const mysqlApi = {
+  /**
+   * 获取所有 MySQL 表
+   * @returns {Promise} - 表列表
+   */
+  getTables: async () => {
+    return apiAdminGet('/api/knowledge/mysql/tables')
+  },
+
+  /**
+   * 获取表详细信息
+   * @param {string} tableName - 表名
+   * @returns {Promise} - 表详细信息
+   */
+  getTableInfo: async (tableName) => {
+    return apiAdminGet(`/api/knowledge/mysql/tables/${tableName}`)
+  },
+
+  /**
+   * 获取表数据（分页）
+   * @param {string} tableName - 表名
+   * @param {number} offset - 偏移量
+   * @param {number} limit - 限制数量
+   * @returns {Promise} - 表数据
+   */
+  getTableData: async (tableName, offset = 0, limit = 100) => {
+    return apiAdminGet(`/api/knowledge/mysql/tables/${tableName}/data`, {
+      params: { offset, limit }
+    })
+  },
+
+  /**
+   * 删除表
+   * @param {string} tableName - 表名
+   * @returns {Promise} - 删除结果
+   */
+  deleteTable: async (tableName) => {
+    return apiAdminDelete(`/api/knowledge/mysql/tables/${tableName}`)
+  },
+
+  /**
+   * 预览 Excel/CSV 文件
+   * @param {File} file - 文件对象
+   * @returns {Promise} - 预览数据
+   */
+  previewFile: async (file) => {
+    console.log('==== previewFile 调用 ====')
+    console.log('file 参数:', file)
+    console.log('file instanceof File:', file instanceof File)
+
+    const formData = new FormData()
+    formData.append('file', file)
+
+    console.log('FormData 内容:')
+    for (let pair of formData.entries()) {
+      console.log(pair[0], pair[1])
+    }
+
+    // 不要手动设置 Content-Type，让浏览器自动设置 multipart/form-data 和 boundary
+    return apiAdminPost('/api/knowledge/mysql/preview', formData)
+  },
+
+  /**
+   * 导入文件到 MySQL
+   * @param {Object} options - 导入选项
+   * @returns {Promise} - 导入结果
+   */
+  importToMySQL: async (options) => {
+    return apiAdminPost('/api/knowledge/mysql/import', options)
   }
 }
