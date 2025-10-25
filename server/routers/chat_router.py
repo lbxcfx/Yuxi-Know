@@ -187,6 +187,11 @@ async def chat_agent(
                     content = msg_dict.get("content", "")
                     tool_calls_data = msg_dict.get("tool_calls", [])
 
+                    # Skip empty AI messages without tool_calls
+                    if not content and not tool_calls_data:
+                        logger.warning(f"Skipping empty AI message without content or tool_calls: {msg.id}")
+                        continue
+
                     # 格式清洗
                     if finish_reason := msg_dict.get("response_metadata", {}).get("finish_reason"):
                         if "tool_call" in finish_reason and len(finish_reason) > len("tool_call"):
