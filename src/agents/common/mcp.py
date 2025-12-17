@@ -17,6 +17,20 @@ MCP_SERVERS = {
         "url": "https://remote.mcpservers.org/sequentialthinking/mcp",
         "transport": "streamable_http",
     },
+    "time": {
+        "command": "uvx",
+        "args": ["mcp-server-time"],
+        "transport": "stdio",
+    },
+    "mcp-server-chart": {
+        "url": "https://mcp.api-inference.modelscope.net/9993ae42524c4c/mcp",
+        "transport": "streamable_http",
+    },
+    "python": {
+        "command": "uvx",
+        "args": ["mcp-python-interpreter", "--dir", "/tmp/mcp-python"],
+        "transport": "stdio",
+    },
     # "zhipu-web-search-sse": {
     #     "url": f"https://open.bigmodel.cn/api/mcp/web_search/sse?Authorization={os.getenv('ZHIPUAI_API_KEY')}",
     #     "transport": "streamable_http",
