@@ -42,21 +42,44 @@
 ### 第四步：选择合适的图表类型
 根据数据特征和用户需求选择图表类型：
 
-| 数据类型 | 推荐图表 | 工具名称 |
-|---------|---------|---------|
-| 分类占比/比例 | 饼图 | `generate_pie_chart` |
-| 分类数值对比 | 柱状图 | `generate_column_chart` |
-| 时间序列趋势 | 折线图 | `generate_line_chart` |
-| 两变量关系 | 散点图 | `generate_scatter_chart` |
-| 数据分布 | 直方图 | `generate_histogram_chart` |
-| 多维数据对比 | 雷达图 | `generate_radar_chart` |
-| 层级数据 | 树图 | `generate_treemap_chart` |
-| 流程数据 | 桑基图 | `generate_sankey_chart` |
+| 数据类型 | 推荐图表 | 工具名称 | 数据要求 |
+|---------|---------|---------|---------|
+| 分类占比/比例 | 饼图 | `generate_pie_chart` | `[{category: "类别A", value: 10}, ...]` |
+| 分类数值对比 | 柱状图 | `generate_column_chart` | `[{category: "类别A", value: 10}, ...]` |
+| 时间序列趋势 | 折线图 | `generate_line_chart` | `[{x: "2024-01", y: 100}, ...]` |
+| 两变量关系 | 散点图 | `generate_scatter_chart` | `[{x: 10, y: 20}, ...]` |
+| 连续数值分布（年龄、体重等） | 直方图 | `generate_histogram_chart` | `[78, 88, 60, 100, 95, ...]` (原始数值数组) |
+| 多维数据对比 | 雷达图 | `generate_radar_chart` | 多维度数据 |
+| 层级数据 | 树图 | `generate_treemap_chart` | 层级结构数据 |
+| 流程数据 | 桑基图 | `generate_sankey_chart` | 流程节点数据 |
+
+**⚠️ 重要提示：图表类型选择规则**
+
+1. **分类数据（疾病类型、部门名称等）→ 使用柱状图或饼图**
+   - SQL: `SELECT disease_type, COUNT(*) FROM patients GROUP BY disease_type`
+   - 数据格式: `[{category: "高血压", value: 13}, {category: "糖尿病", value: 12}, ...]`
+   - 工具: `generate_column_chart` 或 `generate_pie_chart`
+
+2. **连续数值数据（年龄、体重、身高等）→ 使用直方图**
+   - SQL: `SELECT age FROM patients` (获取所有原始年龄值)
+   - 数据格式: `[25, 30, 45, 67, 23, 56, ...]` (纯数字数组)
+   - 工具: `generate_histogram_chart`
+   - 说明: 直方图会自动将数据分组到区间并统计频次
+
+3. **时间序列数据 → 使用折线图**
+   - SQL: `SELECT DATE_FORMAT(date, '%Y-%m') as month, COUNT(*) FROM table GROUP BY month`
+   - 数据格式: `[{x: "2024-01", y: 100}, ...]`
+   - 工具: `generate_line_chart`
 
 ### 第五步：生成图表
-1. 将 SQL 查询结果转换为图表工具所需的数据格式
-2. 调用相应的图表生成工具
-3. 返回图表 URL 和结果说明给用户
+1. **数据格式转换**：根据图表类型要求转换 SQL 查询结果
+   - 柱状图/饼图: 需要 `{category, value}` 格式
+   - 直方图: 需要原始数值数组 `[num1, num2, ...]`
+   - 折线图: 需要 `{x, y}` 格式
+
+2. **调用图表工具**：使用正确的参数调用对应的图表生成工具
+
+3. **返回结果**：返回图表 URL 和结果说明给用户
 
 ## 重要原则
 

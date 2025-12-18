@@ -447,3 +447,39 @@ export const evaluationApi = {
     return apiAdminGet(`/api/evaluation/databases/${dbId}/history`)
   }
 }
+
+// =============================================================================
+// === MySQL Table Management ===
+// =============================================================================
+
+export const mysqlApi = {
+  getTables: async () => {
+    return apiAdminGet('/api/knowledge/mysql/tables')
+  },
+
+  getTableInfo: async (tableName) => {
+    return apiAdminGet(`/api/knowledge/mysql/tables/${tableName}`)
+  },
+
+  getTableData: async (tableName, offset = 0, limit = 100) => {
+    const params = new URLSearchParams({
+      offset: String(offset),
+      limit: String(limit),
+    })
+    return apiAdminGet(`/api/knowledge/mysql/tables/${tableName}/data?${params.toString()}`)
+  },
+
+  deleteTable: async (tableName) => {
+    return apiAdminDelete(`/api/knowledge/mysql/tables/${tableName}`)
+  },
+
+  previewFile: async (file) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return apiAdminPost('/api/knowledge/mysql/preview', formData)
+  },
+
+  importToMySQL: async (options) => {
+    return apiAdminPost('/api/knowledge/mysql/import', options)
+  },
+}

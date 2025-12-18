@@ -16,12 +16,15 @@ import { message } from 'ant-design-vue'
  */
 export async function apiRequest(url, options = {}, requiresAuth = true, responseType = 'json') {
   try {
-    const isFormData = options?.body instanceof FormData
+    // 检查是否是 FormData，FormData 不需要设置 Content-Type (浏览器会自动设置)
+    const isFormData = options.body instanceof FormData
+
     // 默认请求配置
     const requestOptions = {
       ...options,
       headers: {
-        ...(!isFormData ? { 'Content-Type': 'application/json' } : {}),
+        // 只在非 FormData 情况下设置 Content-Type
+        ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
         ...options.headers,
       },
     }
@@ -56,17 +59,6 @@ export async function apiRequest(url, options = {}, requiresAuth = true, respons
         errorData = await response.json()
         errorMessage = errorData.detail || errorData.message || errorMessage
         console.log('API错误详情:', errorData);
-
-        // 如果是422错误，打印更详细的信息
-        if (response.status === 422) {
-          console.error('422验证错误详情:', {
-            url,
-            requestMethod: requestOptions.method,
-            requestHeaders: requestOptions.headers,
-            requestBody: requestOptions.body,
-            responseData: errorData
-          });
-        }
       } catch (e) {
         // 如果无法解析JSON，使用默认错误信息
         console.log('无法解析错误响应JSON:', e);
@@ -159,11 +151,14 @@ export function apiSuperAdminGet(url, options = {}, responseType = 'json') {
  * @returns {Promise} - 请求结果
  */
 export function apiPost(url, data = {}, options = {}, requiresAuth = true, responseType = 'json') {
+  // 如果 data 是 FormData，直接使用，否则转换为 JSON 字符串
+  const body = data instanceof FormData ? data : JSON.stringify(data)
+
   return apiRequest(
     url,
     {
       method: 'POST',
-      body: data instanceof FormData ? data : JSON.stringify(data),
+      body: body,
       ...options
     },
     requiresAuth,
@@ -191,11 +186,14 @@ export function apiSuperAdminPost(url, data = {}, options = {}, responseType = '
  * @returns {Promise} - 请求结果
  */
 export function apiPut(url, data = {}, options = {}, requiresAuth = true, responseType = 'json') {
+  // 如果 data 是 FormData，直接使用，否则转换为 JSON 字符串
+  const body = data instanceof FormData ? data : JSON.stringify(data)
+
   return apiRequest(
     url,
     {
       method: 'PUT',
-      body: data instanceof FormData ? data : JSON.stringify(data),
+      body: body,
       ...options
     },
     requiresAuth,

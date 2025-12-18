@@ -3,8 +3,9 @@ import { ref, reactive, onMounted, useTemplateRef, computed } from 'vue'
 import { RouterLink, RouterView, useRoute } from 'vue-router'
 import {
   GithubOutlined,
+  ExclamationCircleOutlined,
 } from '@ant-design/icons-vue'
-import { Bot, Waypoints, LibraryBig, BarChart3, CircleCheck } from 'lucide-vue-next';
+import { Bot, Waypoints, LibraryBig, Settings, BarChart3, BookOpen, ListChecks, Table2 } from 'lucide-vue-next';
 import { onLongPress } from '@vueuse/core'
 
 import { useConfigStore } from '@/stores/config'
@@ -60,7 +61,7 @@ const getRemoteConfig = () => {
 }
 
 const getRemoteDatabase = () => {
-  databaseStore.getDatabaseInfo(undefined, false) // Explicitly load query params for remote database
+  databaseStore.getDatabaseInfo()
 }
 
 // Fetch GitHub stars count
@@ -110,6 +111,11 @@ const mainList = [{
     icon: LibraryBig,
     activeIcon: LibraryBig,
   }, {
+    name: '数据表',
+    path: '/data-tables',
+    icon: Table2,
+    activeIcon: Table2,
+  }, {
     name: 'Dashboard',
     path: '/dashboard',
     icon: BarChart3,
@@ -144,6 +150,7 @@ const mainList = [{
           class="nav-item task-center"
           :class="{ active: isDrawerOpen }"
           @click="taskerStore.openDrawer()"
+          v-if="activeTaskCount > 0"
         >
           <a-tooltip placement="right">
             <template #title>任务中心</template>
@@ -153,7 +160,7 @@ const mainList = [{
               class="task-center-badge"
               size="small"
             >
-              <CircleCheck class="icon" size="22" />
+              <ListChecks class="icon" size="22" />
             </a-badge>
           </a-tooltip>
         </div>
@@ -164,36 +171,57 @@ const mainList = [{
       ></div>
 
 
-      <div class="github nav-item">
+      <!-- GitHub Star 已隐藏 -->
+      <!-- <div class="github nav-item">
         <a-tooltip placement="right">
           <template #title>欢迎 Star</template>
           <a href="https://github.com/xerrors/Yuxi-Know" target="_blank" class="github-link">
-            <GithubOutlined class="icon" />
+            <GithubOutlined class="icon" style="color: #222;"/>
             <span v-if="githubStars > 0" class="github-stars">
               <span class="star-count">{{ (githubStars / 1000).toFixed(1) }}k</span>
             </span>
           </a>
         </a-tooltip>
+      </div> -->
+      <div class="nav-item docs">
+        <a-tooltip placement="right">
+          <template #title>文档中心</template>
+          <a
+            href="https://xerrors.github.io/Yuxi-Know/"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="docs-link"
+          >
+            <BookOpen class="icon" size="22" />
+          </a>
+        </a-tooltip>
       </div>
-
-
-        <!-- <div class="nav-item api-docs">
+      <!-- <div class="nav-item api-docs">
         <a-tooltip placement="right">
           <template #title>接口文档 {{ apiDocsUrl }}</template>
           <a :href="apiDocsUrl" target="_blank" class="github-link">
-            <ApiOutlined class="icon" style="color: var(--gray-1000);"/>
+            <ApiOutlined class="icon" style="color: #222;"/>
           </a>
         </a-tooltip>
       </div> -->
 
       <!-- 用户信息组件 -->
       <div class="nav-item user-info">
-        <UserInfoComponent />
+        <a-tooltip placement="right">
+          <template #title>用户信息</template>
+          <UserInfoComponent />
+        </a-tooltip>
       </div>
 
-      </div>
+      <RouterLink class="nav-item setting" to="/setting" active-class="active">
+        <a-tooltip placement="right">
+          <template #title>设置</template>
+          <Settings />
+        </a-tooltip>
+      </RouterLink>
+    </div>
     <div class="header-mobile">
-      <RouterLink to="/agent" class="nav-item" active-class="active">对话</RouterLink>
+      <RouterLink to="/chat" class="nav-item" active-class="active">对话</RouterLink>
       <RouterLink to="/database" class="nav-item" active-class="active">知识</RouterLink>
       <RouterLink to="/setting" class="nav-item" active-class="active">设置</RouterLink>
     </div>
@@ -263,7 +291,7 @@ div.header, #app-router-view {
   flex: 0 0 @header-width;
   justify-content: flex-start;
   align-items: center;
-  background-color: var(--main-0);
+  background-color: var(--main-10);
   height: 100%;
   width: @header-width;
   border-right: 1px solid var(--gray-100);
@@ -302,7 +330,7 @@ div.header, #app-router-view {
       text-decoration: none;
       font-size: 24px;
       font-weight: bold;
-      color: var(--gray-900);
+      color: #333;
     }
   }
 
@@ -310,40 +338,18 @@ div.header, #app-router-view {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    padding: 4px;
+    width: 44px;
+    height: 44px;
+    padding: 10px;
     border: 1px solid transparent;
-    border-radius: 12px;
+    border-radius: 8px;
     background-color: transparent;
-    color: var(--gray-1000);
+    color: #222;
     font-size: 20px;
-    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+    transition: background-color 0.2s ease-in-out;
     margin: 0;
     text-decoration: none;
     cursor: pointer;
-    outline: none;
-
-    & > svg:focus {
-      outline: none;
-    }
-    & > svg:focus-visible {
-      outline: none;
-    }
-
-    &.active {
-      background-color: var(--gray-100);
-      font-weight: bold;
-      color: var(--main-color);
-    }
-
-    &.warning {
-      color: var(--color-error-500);
-    }
-
-    &:hover {
-      color: var(--main-color);
-    }
 
     &.github {
       padding: 10px 12px;
@@ -367,7 +373,7 @@ div.header, #app-router-view {
         margin-top: 4px;
 
         .star-icon {
-          color: var(--color-warning-500);
+          color: #f0a742;
           font-size: 12px;
           margin-right: 2px;
         }
@@ -381,7 +387,16 @@ div.header, #app-router-view {
     &.api-docs {
       padding: 10px 12px;
     }
-    &.docs { display: none; }
+    &.docs {
+      padding: 10px 12px;
+      margin-bottom: 12px;
+
+      .docs-link {
+        display: flex;
+        align-items: center;
+        color: inherit;
+      }
+    }
     &.task-center {
       .task-center-badge {
         width: 100%;
@@ -390,27 +405,32 @@ div.header, #app-router-view {
       }
     }
 
-    &.theme-toggle-nav {
-      .theme-toggle-icon {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
-        height: 100%;
-        cursor: pointer;
-        color: var(--gray-1000);
-        transition: color 0.2s ease-in-out;
-
-        &:hover {
-          color: var(--main-color);
-        }
-      }
+    &.active {
+      text-shadow: 0 0 15px var(--main-300);
+      font-weight: bold;
+      color: var(--main-color);
     }
-    &.user-info {
-      margin-bottom: 8px;
+
+    &.warning {
+      color: red;
+    }
+
+    &:hover {
+      color: var(--main-color);
     }
   }
 
+  .setting {
+    width: auto;
+    font-size: 20px;
+    color: #333;
+    margin-bottom: 8px;
+    padding: 16px 12px;
+
+    &:hover {
+      cursor: pointer;
+    }
+  }
 }
 
 
@@ -447,7 +467,7 @@ div.header, #app-router-view {
       transition: color 0.1s ease-in-out, font-size 0.1s ease-in-out;
 
       &.active {
-        color: var(--gray-10000);
+        color: black;
         font-size: 1.1rem;
       }
     }
@@ -523,7 +543,7 @@ div.header, #app-router-view {
       font-size: 15px;
     }
 
-    &.github {
+    &.github, &.setting {
       padding: 8px 12px;
 
       .icon {
@@ -534,7 +554,9 @@ div.header, #app-router-view {
       &.active {
         color: var(--main-color);
       }
+    }
 
+    &.github {
       a {
         display: flex;
         align-items: center;
@@ -546,32 +568,9 @@ div.header, #app-router-view {
         margin-left: 6px;
 
         .star-icon {
-          color: var(--color-warning-500);
+          color: #f0a742;
           font-size: 14px;
           margin-right: 2px;
-        }
-      }
-    }
-
-    &.theme-toggle-nav {
-      padding: 8px 12px;
-
-      .theme-toggle-icon {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--gray-1000);
-        transition: color 0.2s ease-in-out;
-        cursor: pointer;
-
-        &:hover {
-          color: var(--main-color);
-        }
-      }
-
-      &.active {
-        .theme-toggle-icon {
-          color: var(--main-color);
         }
       }
     }
