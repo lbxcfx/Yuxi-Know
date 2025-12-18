@@ -642,8 +642,9 @@ const _processStreamChunk = (chunk, threadId) => {
           });
         }
       }
-      // 异步加载历史记录，保持当前消息显示直到历史记录加载完成
-      fetchThreadMessages({ agentId: currentAgentId.value, threadId: threadId })
+      // 静默加载历史记录，只在内容真正变化时更新
+      // 避免不必要的重新渲染造成闪烁
+      fetchThreadMessages({ agentId: currentAgentId.value, threadId: threadId, silent: true })
         .finally(() => {
           // 历史记录加载完成后，安全地清空当前进行中的对话
           resetOnGoingConv(threadId, true);
@@ -759,18 +760,25 @@ const updateThread = async (threadId, title) => {
 };
 
 // 获取线程消息
-const fetchThreadMessages = async ({ agentId, threadId, delay = 0 }) => {
+const fetchThreadMessages = async ({ agentId, threadId, delay = 0, silent = false }) => {
   if (!threadId || !agentId) return;
 
-  // 如果指定了延迟，等待指定时间（用于确保后端数据库事务提交）
   if (delay > 0) {
     await new Promise(resolve => setTimeout(resolve, delay));
   }
 
   try {
     const response = await agentApi.getAgentHistory(agentId, threadId);
-    console.log('🔄 [FETCH] Thread messages:', response);
-    threadMessages.value[threadId] = response.history || [];
+    const newHistory = response.history || [];
+
+    if (silent) {
+      const currentMessages = threadMessages.value[threadId] || [];
+      if (JSON.stringify(currentMessages) === JSON.stringify(newHistory)) {
+        return;
+      }
+    }
+
+    threadMessages.value[threadId] = newHistory;
   } catch (error) {
     handleChatError(error, 'load');
     throw error;
@@ -1099,7 +1107,7 @@ const handleSendMessage = async () => {
     if (error.name !== 'AbortError') {
       handleChatError(error, 'send');
     }
-  } finally {
+    // 仅在发生错误时重置消息，正常结束时由 _processStreamChunk 的 'finished' case 处理
     threadState.isStreaming = false;
     threadState.streamAbortController = null;
     resetOnGoingConv(threadId);

@@ -417,6 +417,41 @@ async def delete_document(db_id: str, doc_id: str, current_user: User = Depends(
         raise HTTPException(status_code=400, detail=f"删除文档失败: {e}")
 
 
+@knowledge.get("/databases/{db_id}/documents/{doc_id}/preview")
+async def preview_document(db_id: str, doc_id: str):
+    """Preview a document file (mainly images)."""
+    logger.debug(f"Preview document {doc_id} from {db_id}")
+    try:
+        file_info = await knowledge_base.get_file_basic_info(db_id, doc_id)
+        if not file_info:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        file_path = file_info.get("meta", {}).get("path")
+        if not file_path:
+            raise HTTPException(status_code=404, detail="File path not found in metadata")
+
+        from src.knowledge.utils.kb_utils import validate_file_path
+
+        try:
+            normalized_path = validate_file_path(file_path, db_id)
+        except ValueError as e:
+            raise HTTPException(status_code=403, detail=str(e))
+
+        if not os.path.exists(normalized_path):
+            raise HTTPException(status_code=404, detail="File not found on disk")
+
+        filename = file_info.get("meta", {}).get("filename", "file")
+        _, ext = os.path.splitext(filename)
+        media_type = media_types.get(ext.lower(), "application/octet-stream")
+
+        return FileResponse(path=normalized_path, media_type=media_type, filename=filename)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to preview document: {e}, {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Failed to preview document: {str(e)}")
+
+
 @knowledge.post("/databases/{db_id}/documents/rechunks")
 async def rechunks_documents(
     db_id: str, file_ids: list[str] = Body(...), params: dict = Body(...), current_user: User = Depends(get_admin_user)

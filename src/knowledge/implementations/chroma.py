@@ -413,6 +413,12 @@ class ChromaKB(KnowledgeBase):
                 if "full_doc_id" in metadata:
                     metadata["file_id"] = metadata.pop("full_doc_id")
 
+                file_id = metadata.get("file_id")
+                if file_id:
+                    file_info = self.files_meta.get(file_id, {})
+                    metadata["file_type"] = file_info.get("file_type", "")
+                    metadata["file_path"] = file_info.get("path", "")
+
                 chunk = {"content": doc, "metadata": metadata, "score": similarity}
                 if include_distances and i < len(distances):
                     chunk["distance"] = distances[i]

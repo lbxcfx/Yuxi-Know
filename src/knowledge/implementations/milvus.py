@@ -477,11 +477,20 @@ class MilvusKB(KnowledgeBase):
                     continue
 
                 entity = hit.entity
+                file_id = entity.get("file_id")
+
+                # 从 files_meta 获取文件信息
+                file_info = self.files_meta.get(file_id, {})
+                file_type = file_info.get("file_type", "")
+                file_path = file_info.get("path", "")
+
                 metadata = {
                     "source": entity.get("source", "未知来源"),
                     "chunk_id": entity.get("chunk_id"),
-                    "file_id": entity.get("file_id"),
+                    "file_id": file_id,
                     "chunk_index": entity.get("chunk_index"),
+                    "file_type": file_type,
+                    "file_path": file_path,
                 }
 
                 chunk = {"content": entity.get("content", ""), "metadata": metadata, "score": similarity}

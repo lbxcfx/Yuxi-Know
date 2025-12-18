@@ -20,7 +20,8 @@
           @click="toggleFile(fileGroup.filename)"
         >
           <div class="file-info">
-            <FileOutlined />
+            <FileImageOutlined v-if="isImageFile(fileGroup.chunks[0]?.metadata?.file_type)" class="file-icon image-icon" />
+            <FileOutlined v-else />
             <span class="file-name">{{ fileGroup.filename }}</span>
             <span class="chunk-count">{{ fileGroup.chunks.length }} chunks</span>
           </div>
@@ -98,6 +99,14 @@
 
         <div class="detail-content">
           <h5>文档内容</h5>
+          <!-- 如果是图片文件，显示图片预览 -->
+          <div v-if="isImageFile(selectedChunk.data.metadata?.file_type)" class="image-preview">
+            <img
+              :src="getPreviewUrl(selectedChunk.data.metadata)"
+              :alt="selectedChunk.data.metadata?.source"
+              @error="handleImageError"
+            />
+          </div>
           <div class="content-text">{{ selectedChunk.data.content }}</div>
         </div>
       </div>
@@ -107,7 +116,7 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { FileTextOutlined, FileOutlined, DownOutlined, EyeOutlined, DatabaseOutlined } from '@ant-design/icons-vue'
+import { FileTextOutlined, FileOutlined, FileImageOutlined, DownOutlined, EyeOutlined, DatabaseOutlined } from '@ant-design/icons-vue'
 
 const props = defineProps({
   data: {
@@ -177,6 +186,37 @@ const getScoreColor = (score) => {
   if (score >= 0.7) return '#52c41a'  // 绿色 - 高相关性
   if (score >= 0.5) return '#faad14'  // 橙色 - 中等相关性
   return '#ff4d4f'  // 红色 - 低相关性
+}
+
+// 判断是否为图片文件
+const isImageFile = (fileType) => {
+  const imageTypes = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff', 'tif']
+  return imageTypes.includes(fileType?.toLowerCase())
+}
+
+// 获取图片预览 URL
+const getPreviewUrl = (metadata) => {
+  if (!metadata?.file_id) return ''
+
+  // 从 file_path 中提取 db_id
+  const filePath = metadata.file_path || ''
+  const dbIdMatch = filePath.match(/kb_[a-f0-9]+/)
+  const dbId = dbIdMatch ? dbIdMatch[0] : ''
+
+  if (!dbId) {
+    console.warn('Could not extract db_id from path:', filePath)
+    return ''
+  }
+
+  const url = `/api/knowledge/databases/${dbId}/documents/${metadata.file_id}/preview`
+  console.log('Preview URL:', url, 'for file:', metadata.source)
+  return url
+}
+
+// 图片加载失败处理
+const handleImageError = (event) => {
+  console.error('Failed to load image:', event.target.src)
+  event.target.style.display = 'none'
 }
 </script>
 
@@ -253,6 +293,10 @@ const getScoreColor = (score) => {
         .anticon {
           color: var(--gray-500);
           font-size: 13px;
+
+          &.image-icon {
+            color: var(--main-color);
+          }
         }
 
         .file-name {
@@ -438,6 +482,26 @@ const getScoreColor = (score) => {
       color: var(--gray-800);
       font-size: 14px;
       font-weight: 500;
+    }
+
+    .image-preview {
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      background: var(--gray-25);
+      border: 1px solid var(--gray-150);
+      border-radius: 8px;
+      padding: 12px;
+      max-height: 400px;
+      overflow: hidden;
+
+      img {
+        max-width: 100%;
+        max-height: 380px;
+        object-fit: contain;
+        border-radius: 4px;
+      }
     }
 
     .content-text {
