@@ -294,9 +294,10 @@ import {
   CloseOutlined,
   CheckCircleOutlined,
   PlusCircleOutlined,
-  SearchOutlined
+  SearchOutlined,
 } from '@ant-design/icons-vue';
 import { message } from 'ant-design-vue';
+import { useRouter } from 'vue-router';
 import ModelSelectorComponent from '@/components/ModelSelectorComponent.vue';
 import { useAgentStore } from '@/stores/agent';
 import { storeToRefs } from 'pinia';
@@ -313,6 +314,9 @@ const props = defineProps({
 const emit = defineEmits([
   'close'
 ]);
+
+// Router
+const router = useRouter();
 
 // Store 管理
 const agentStore = useAgentStore();
@@ -566,6 +570,7 @@ watch(() => props.isOpen, (newVal) => {
     loadAvailableTools();
   }
 });
+
 </script>
 
 <style lang="less" scoped>
