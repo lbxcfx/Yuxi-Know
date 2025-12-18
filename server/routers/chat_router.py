@@ -491,6 +491,121 @@ async def chat_agent(
             + b"\n"
         )
 
+
+    async def save_messages_from_langgraph_state(
+        agent_instance,
+        thread_id,
+        conv_mgr,
+        config_dict,
+    ):
+        """
+        从 LangGraph state 中读取完整消息并保存到数据库
+        这样可以获得完整的 tool_calls 参数
+        """
+        try:
+            graph = await agent_instance.get_graph()
+            state = await graph.aget_state(config_dict)
+
+            if not state or not state.values:
+                logger.warning("No state found in LangGraph")
+                return
+
+            messages = state.values.get("messages", [])
+            logger.debug(f"Retrieved {len(messages)} messages from LangGraph state")
+
+            # 获取已保存的消息数量，避免重复保存
+            existing_messages = conv_mgr.get_messages_by_thread_id(thread_id)
+            existing_ids = {
+                msg.extra_metadata["id"]
+                for msg in existing_messages
+                if msg.extra_metadata and "id" in msg.extra_metadata
+            }
+
+            for msg in messages:
+                msg_dict = msg.model_dump() if hasattr(msg, "model_dump") else {}
+                msg_type = msg_dict.get("type", "unknown")
+
+                if msg_type == "human" or msg.id in existing_ids:
+                    continue
+
+                elif msg_type == "ai":
+                    # AI 消息
+                    content = msg_dict.get("content", "")
+                    tool_calls_data = msg_dict.get("tool_calls", [])
+
+                    # Skip empty AI messages without tool_calls
+                    if not content and not tool_calls_data:
+                        logger.warning(f"Skipping empty AI message without content or tool_calls: {msg.id}")
+                        continue
+
+                    # 格式清洗
+                    if finish_reason := msg_dict.get("response_metadata", {}).get("finish_reason"):
+                        if "tool_call" in finish_reason and len(finish_reason) > len("tool_call"):
+                            model_name = msg_dict.get("response_metadata", {}).get("model_name", "")
+                            repeat_count = len(finish_reason) // len("tool_call")
+                            msg_dict["response_metadata"]["finish_reason"] = "tool_call"
+                            msg_dict["response_metadata"]["model_name"] = model_name[: len(model_name) // repeat_count]
+
+                    # 保存 AI 消息
+                    ai_msg = conv_mgr.add_message_by_thread_id(
+                        thread_id=thread_id,
+                        role="assistant",
+                        content=content,
+                        message_type="text",
+                        extra_metadata=msg_dict,  # 保存原始 model_dump
+                    )
+
+                    # 保存 tool_calls（如果有）- 使用 LangGraph 的 tool_call_id
+                    if tool_calls_data:
+                        logger.debug(f"Saving {len(tool_calls_data)} tool calls from AI message")
+                        for tc in tool_calls_data:
+                            conv_mgr.add_tool_call(
+                                message_id=ai_msg.id,
+                                tool_name=tc.get("name", "unknown"),
+                                tool_input=tc.get("args", {}),  # 完整的参数
+                                status="pending",  # 工具还未执行
+                                langgraph_tool_call_id=tc.get("id"),  # 保存 LangGraph tool_call_id
+                            )
+
+                    logger.debug(f"Saved AI message {ai_msg.id} with {len(tool_calls_data)} tool calls")
+
+                elif msg_type == "tool":
+                    # 工具执行结果消息 - 使用 tool_call_id 精确匹配
+                    tool_call_id = msg_dict.get("tool_call_id")
+                    content = msg_dict.get("content", "")
+                    name = msg_dict.get("name", "")
+
+                    if tool_call_id:
+                        # 确保tool_output是字符串类型，避免SQLite不支持列表类型
+                        if isinstance(content, list):
+                            tool_output = json.dumps(content) if content else ""
+                        else:
+                            tool_output = str(content)
+
+                        # 通过 LangGraph tool_call_id 精确匹配并更新
+                        updated_tc = conv_mgr.update_tool_call_output(
+                            langgraph_tool_call_id=tool_call_id,
+                            tool_output=tool_output,
+                            status="success",
+                        )
+                        if updated_tc:
+                            logger.debug(f"Updated tool_call {tool_call_id} ({name}) with output")
+                        else:
+                            logger.warning(f"Tool call {tool_call_id} not found for update")
+
+                else:
+                    logger.warning(f"Unknown message type: {msg_type}, skipping")
+                    continue
+
+                logger.debug(f"Processed message type={msg_type}")
+
+            logger.info("Saved messages from LangGraph state")
+
+        except Exception as e:
+            logger.error(f"Error saving messages from LangGraph state: {e}")
+            logger.error(traceback.format_exc())
+
+
     async def stream_messages():
         # 构建多模态消息
         if image_content:
