@@ -40,7 +40,7 @@ class MinIOClient:
     简化的 MinIO 客户端类
     """
 
-    PUBLIC_READ_BUCKETS = {"generated-images", "avatar", "kb-images"}
+    PUBLIC_READ_BUCKETS = {"generated-images", "avatar", "kb-images", "temp-ocr"}
 
     def __init__(self):
         """初始化 MinIO 客户端"""

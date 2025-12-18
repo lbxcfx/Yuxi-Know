@@ -232,56 +232,206 @@ class OCRPlugin:
             logger.error(f"PDF processing error: {str(e)}")
             return ""
 
-    def process_file_mineru(self, file_path, params=None):
+    def process_file_qwen_vl(self, file_path, params=None):
         """
-        使用Mineru OCR处理文件
-        支持两种模式：
-        1. 远程 API 模式：使用 MINERU_API_KEY 调用官方 API (https://mineru.net)
-        2. 本地服务模式：使用 MINERU_OCR_URI 调用本地容器服务
+        使用通义千问 VL 模型处理图片和 PDF
+        支持通过 base64 编码直接发送文件内容
 
-        :param file_path: 文件路径
-        :param params: 参数
+        :param file_path: 文件路径（支持图片和 PDF）
+        :param params: 参数字典，可包含 prompt（默认为 OCR 提示）
         :return: 提取的文本
         """
-        import requests
+        import base64
+        from openai import OpenAI
 
-        # 检查是否配置了 API Key（优先使用远程 API）
-        mineru_api_key = os.getenv("MINERU_API_KEY", "")
+        api_key = os.getenv("DASHSCOPE_API_KEY", "")
+        if not api_key:
+            raise OCRServiceException(
+                "未配置 DASHSCOPE_API_KEY，无法使用通义千问 VL 模型", "qwen_vl", "missing_api_key"
+            )
 
-        if mineru_api_key:
-            # 使用远程 API
-            return self._process_file_mineru_api(file_path, mineru_api_key, params)
-        else:
-            # 使用本地服务
-            return self._process_file_mineru_local(file_path, params)
+        try:
+            start_time = time.time()
+
+            # 如果是 PDF，先转换为图片
+            if file_path.lower().endswith('.pdf'):
+                images = self._pdf_to_images(file_path)
+                if not images:
+                    raise OCRServiceException("PDF 转换为图片失败", "qwen_vl", "pdf_conversion_failed")
+            else:
+                # 直接读取图片
+                images = [file_path]
+
+            # 处理所有图片
+            all_text = []
+            for img_path in tqdm(images, desc="Processing images with Qwen-VL", ncols=100):
+                text = self._process_image_qwen_vl(img_path, api_key, params)
+                if text:
+                    all_text.append(text)
+
+            result_text = "\n\n".join(all_text)
+            processing_time = time.time() - start_time
+
+            log_ocr_request("qwen_vl", file_path, True, processing_time)
+            logger.info(f"✓ Qwen-VL OCR 处理成功，提取 {len(result_text)} 个字符，耗时 {processing_time:.2f}s")
+
+            return result_text
+
+        except OCRServiceException:
+            raise
+        except Exception as e:
+            processing_time = time.time() - start_time if 'start_time' in locals() else 0
+            error_msg = f"Qwen-VL OCR 处理失败: {str(e)}"
+            log_ocr_request("qwen_vl", file_path, False, processing_time, error_msg)
+            raise OCRServiceException(error_msg, "qwen_vl", "processing_failed")
+
+    def _process_image_qwen_vl(self, image_path, api_key, params=None):
+        """
+        使用 Qwen-VL 处理单张图片
+
+        :param image_path: 图片路径
+        :param api_key: API Key
+        :param params: 参数字典
+        :return: 提取的文本
+        """
+        import base64
+        from openai import OpenAI
+
+        try:
+            # 读取图片并转换为 base64
+            with open(image_path, "rb") as image_file:
+                base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+
+            # 判断图片格式
+            ext = os.path.splitext(image_path)[1].lower()
+            image_format_map = {
+                '.png': 'png',
+                '.jpg': 'jpeg',
+                '.jpeg': 'jpeg',
+                '.webp': 'webp',
+                '.bmp': 'png',  # BMP 转换为 PNG 格式
+                '.tiff': 'png',
+                '.tif': 'png'
+            }
+            image_format = image_format_map.get(ext, 'png')
+
+            # 获取自定义提示词，默认使用 OCR 提示
+            prompt = params.get("prompt") if params else None
+            if not prompt:
+                prompt = (
+                    "请识别图片中的所有文字内容，按原文的顺序和格式输出。"
+                    "如果图片中有表格，请保持表格结构。"
+                    "只输出识别的文字，不要添加任何解释或描述。"
+                )
+
+            # 创建 OpenAI 客户端
+            client = OpenAI(
+                api_key=api_key,
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            )
+
+            # 调用 API
+            completion = client.chat.completions.create(
+                model="qwen-vl-plus",  # 使用 qwen-vl-plus 模型
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/{image_format};base64,{base64_image}"},
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+            )
+
+            # 提取结果
+            text = completion.choices[0].message.content
+            return text
+
+        except Exception as e:
+            logger.error(f"Qwen-VL 处理图片失败: {image_path} - {str(e)}")
+            raise OCRServiceException(f"Qwen-VL 处理图片失败: {str(e)}", "qwen_vl", "api_error")
+
+    def _pdf_to_images(self, pdf_path):
+        """
+        将 PDF 转换为图片列表
+
+        :param pdf_path: PDF 文件路径
+        :return: 图片路径列表
+        """
+        try:
+            images = []
+            pdfDoc = fitz.open(pdf_path)
+            totalPage = pdfDoc.page_count
+
+            # 创建临时目录
+            tmp_dir = os.path.join(os.getcwd(), "tmp", "pdf_images")
+            os.makedirs(tmp_dir, exist_ok=True)
+
+            for pg in range(totalPage):
+                page = pdfDoc[pg]
+                # 使用较高的分辨率以提高 OCR 准确率
+                rotate, zoom_x, zoom_y = 0, 2, 2
+                mat = fitz.Matrix(zoom_x, zoom_y).prerotate(rotate)
+                pix = page.get_pixmap(matrix=mat, alpha=False)
+
+                # 保存为临时图片
+                img_path = os.path.join(tmp_dir, f"page_{pg}.png")
+                img_pil = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img_pil.save(img_path)
+                images.append(img_path)
+
+            logger.info(f"PDF 转换为 {len(images)} 张图片")
+            return images
+
+        except Exception as e:
+            logger.error(f"PDF 转换为图片失败: {str(e)}")
+            return []
 
     def _process_file_mineru_api(self, file_path, api_key, params=None):
         """
         使用 MinerU 官方 API 处理文件
         API 文档: https://mineru.net
+
+        新版 API 流程:
+        1. 提交任务，获取 task_id
+        2. 轮询任务状态
+        3. 任务完成后下载 ZIP 文件
+        4. 从 ZIP 中提取 markdown 文件
         """
         import requests
         import json
-        from src.storage.minio_storage import MinioStorage
+        import zipfile
+        import io
 
         mineru_api_url = os.getenv("MINERU_API_URL", "https://mineru.net/api/v4/extract/task")
 
         try:
             start_time = time.time()
 
-            # 1. 上传文件到 MinIO 获取公开访问 URL
+            # 1. 准备文件 URL
             # 如果文件已经是 URL，直接使用
             if file_path.startswith("http://") or file_path.startswith("https://"):
                 file_url = file_path
             else:
-                # 上传到 MinIO
-                minio = MinioStorage()
-                # 使用临时存储桶上传文件
-                file_url = minio.upload_file_and_get_url(file_path, bucket_name="temp-ocr")
+                # 尝试上传到 MinIO
+                try:
+                    from src.storage.minio_storage import MinioStorage
+                    minio = MinioStorage()
+                    file_url = minio.upload_file_and_get_url(file_path, bucket_name="temp-ocr")
+                    logger.info(f"文件已上传到 MinIO: {file_url}")
+                except Exception as e:
+                    logger.warning(f"MinIO 上传失败: {e}，文件需要公开 URL 才能使用 MinerU API")
+                    raise OCRServiceException(
+                        "MinerU API 需要文件公开 URL，但 MinIO 上传失败", "mineru_api", "upload_failed"
+                    )
 
             logger.info(f"准备使用 MinerU API 处理文件: {file_url}")
 
-            # 2. 调用 MinerU API
+            # 2. 调用 MinerU API 提交任务
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}"
@@ -294,7 +444,7 @@ class OCRPlugin:
             }
 
             logger.debug(f"调用 MinerU API: {mineru_api_url}")
-            response = requests.post(mineru_api_url, headers=headers, json=data, timeout=300)
+            response = requests.post(mineru_api_url, headers=headers, json=data, timeout=60)
 
             if response.status_code != 200:
                 error_msg = f"MinerU API 调用失败: HTTP {response.status_code}"
@@ -306,25 +456,98 @@ class OCRPlugin:
 
                 raise OCRServiceException(error_msg, "mineru_api", "api_error")
 
-            # 3. 解析响应
+            # 3. 解析响应，获取任务 ID
             result = response.json()
 
-            if result.get("code") != 200:
-                error_msg = f"MinerU API 返回错误: {result.get('message', 'Unknown error')}"
+            # 新版 API: code=0 表示成功，旧版 API: code=200
+            if result.get("code") not in [0, 200]:
+                error_msg_raw = result.get('msg', result.get('message', 'Unknown error'))
+                error_msg = f"MinerU API 返回错误: {error_msg_raw}"
+
+                # 特殊错误提示
+                if "failed to read file" in error_msg_raw.lower() or "-60003" in str(result.get("code")):
+                    error_msg += "\n提示: MinerU API 无法访问文件 URL，请确保文件 URL 可从公网访问。"
+                    error_msg += "\n本地 MinIO (localhost) 无法被 MinerU API 访问，建议使用公网对象存储或本地 MinerU 服务。"
+
                 raise OCRServiceException(error_msg, "mineru_api", "api_error")
 
-            # 4. 获取提取的文本
-            data_url = result.get("data", "")
-            if not data_url:
-                raise OCRServiceException("MinerU API 未返回数据", "mineru_api", "no_data")
+            data_result = result.get("data", {})
 
-            # 5. 下载结果（data 字段包含结果文件的 URL）
-            result_response = requests.get(data_url, timeout=60)
+            # 检查是否是新版 API（返回 task_id）
+            if isinstance(data_result, dict) and "task_id" in data_result:
+                task_id = data_result["task_id"]
+                logger.info(f"获取到任务 ID: {task_id}")
+
+                # 4. 轮询任务状态
+                query_url = f"https://mineru.net/api/v4/extract/task/{task_id}"
+                max_retries = 60  # 最多等待 5 分钟
+                retry_interval = 5
+
+                for i in range(max_retries):
+                    time.sleep(retry_interval)
+
+                    query_response = requests.get(query_url, headers=headers, timeout=30)
+                    if query_response.status_code != 200:
+                        logger.warning(f"查询任务状态失败: {query_response.status_code}")
+                        continue
+
+                    task_result = query_response.json()
+                    if task_result.get("code") == 0:
+                        task_data = task_result.get("data", {})
+                        state = task_data.get("state")
+
+                        if state == "done":
+                            # 任务完成
+                            data_url = task_data.get("full_zip_url")
+                            if data_url:
+                                logger.info(f"任务完成，获取到结果 URL: {data_url}")
+                                break
+                            else:
+                                raise OCRServiceException("任务完成但未返回结果 URL", "mineru_api", "no_data")
+                        elif state == "failed" or state == "error":
+                            err_msg = task_data.get("err_msg", "Unknown error")
+                            raise OCRServiceException(f"任务失败: {err_msg}", "mineru_api", "task_failed")
+                        else:
+                            logger.debug(f"任务状态: {state} (第 {i+1}/{max_retries} 次查询)")
+                else:
+                    raise OCRServiceException(
+                        f"任务超时，未能在 {max_retries * retry_interval} 秒内完成", "mineru_api", "timeout"
+                    )
+            else:
+                # 旧版 API，直接返回 URL
+                if isinstance(data_result, str):
+                    data_url = data_result
+                else:
+                    raise OCRServiceException("API 返回数据格式异常", "mineru_api", "invalid_format")
+
+            # 5. 下载结果
+            logger.info(f"下载处理结果: {data_url}")
+            result_response = requests.get(data_url, timeout=120)
             if result_response.status_code != 200:
-                raise OCRServiceException(f"下载 MinerU 结果失败: HTTP {result_response.status_code}", "mineru_api", "download_error")
+                raise OCRServiceException(
+                    f"下载 MinerU 结果失败: HTTP {result_response.status_code}", "mineru_api", "download_error"
+                )
 
-            # 6. 解析结果（通常是 markdown 格式）
-            text = result_response.text
+            # 6. 解析结果
+            if data_url.endswith('.zip'):
+                # ZIP 文件，需要解压并提取 markdown
+                logger.debug(f"解压 ZIP 文件 ({len(result_response.content) / 1024:.2f} KB)")
+
+                zip_file = zipfile.ZipFile(io.BytesIO(result_response.content))
+                md_files = [f for f in zip_file.namelist() if f.endswith('.md')]
+
+                if not md_files:
+                    raise OCRServiceException("ZIP 文件中未找到 markdown 文件", "mineru_api", "no_markdown")
+
+                # 读取第一个 markdown 文件（通常是 full.md）
+                md_file = md_files[0]
+                logger.debug(f"提取 markdown 文件: {md_file}")
+
+                with zip_file.open(md_file) as f:
+                    text = f.read().decode('utf-8')
+            else:
+                # 直接是文本内容
+                text = result_response.text
 
             processing_time = time.time() - start_time
             log_ocr_request("mineru_api", file_path, True, processing_time)

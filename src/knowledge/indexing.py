@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os
 import re
 import xml.etree.ElementTree as ET
@@ -364,7 +364,7 @@ def parse_image(file, params=None):
     if opt_ocr == "disable":
         raise ValueError(
             "图像文件必须启用OCR才能提取文本内容。"
-            "请选择OCR方式 (onnx_rapid_ocr/mineru_ocr/mineru_official/paddlex_ocr) 或移除该文件。"
+            "请选择OCR方式 (onnx_rapid_ocr/mineru_ocr/mineru_official/paddlex_ocr/qwen_vl_ocr) 或移除该文件。"
         )
 
     try:
@@ -800,3 +800,4 @@ def _replace_image_links(markdown_content: str, images: list[dict]) -> str:
 
 async def process_url_to_markdown(url: str, params: dict | None = None) -> str:
     raise NotImplementedError("URL 解析功能已禁用")
+

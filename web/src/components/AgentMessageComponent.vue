@@ -85,6 +85,8 @@
         <span class="retry-link" @click="emit('retryStoppedMessage', message.id)">重新编辑问题</span>
       </div>
 
+      <!-- 知识库来源标签 -->
+      <KnowledgeSourcesTag v-if="knowledgeSources.length > 0" :sources="knowledgeSources" />
 
       <div v-if="(message.role=='received' || message.role=='assistant') && message.status=='finished' && showRefs">
         <RefsComponent :message="message" :show-refs="showRefs" :is-latest-message="isLatestMessage" @retry="emit('retry')" @openRefs="emit('openRefs', $event)" />
@@ -103,6 +105,7 @@
 import { computed, ref } from 'vue';
 import { CaretRightOutlined, ThunderboltOutlined, LoadingOutlined } from '@ant-design/icons-vue';
 import RefsComponent from '@/components/RefsComponent.vue'
+import KnowledgeSourcesTag from '@/components/KnowledgeSourcesTag.vue'
 import { Loader, CircleCheckBig } from 'lucide-vue-next';
 import { ToolResultRenderer } from '@/components/ToolCallingResult'
 import { useAgentStore } from '@/stores/agent'
@@ -273,6 +276,34 @@ const toggleToolCall = (toolCallId) => {
     expandedToolCalls.value.add(toolCallId);
   }
 };
+
+// 提取知识库来源信息
+const knowledgeSources = computed(() => {
+  if (!props.message.tool_calls || Object.keys(props.message.tool_calls).length === 0) {
+    return [];
+  }
+
+  const sources = [];
+
+  // 遍历所有工具调用
+  Object.values(props.message.tool_calls).forEach(toolCall => {
+    // 检查是否是知识库查询工具
+    const toolName = toolCall.name || toolCall.function?.name || '';
+    if (toolName.startsWith('query_') && toolCall.tool_call_result?.content) {
+      try {
+        const result = toolCall.tool_call_result.content;
+        // 如果是数组，说明是知识库检索结果
+        if (Array.isArray(result)) {
+          sources.push(...result);
+        }
+      } catch (e) {
+        console.warn('Failed to parse knowledge base result:', e);
+      }
+    }
+  });
+
+  return sources;
+});
 </script>
 
 <style lang="less" scoped>

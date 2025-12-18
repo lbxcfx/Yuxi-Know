@@ -151,6 +151,20 @@ async def check_ocr_services_health(current_user: User = Depends(get_admin_user)
         # 使用统一的健康检查接口
         health_status = DocumentProcessorFactory.check_all_health()
 
+        # Qwen-VL OCR health (depends on DASHSCOPE_API_KEY)
+        if os.getenv("DASHSCOPE_API_KEY"):
+            health_status["qwen_vl_ocr"] = {
+                "status": "healthy",
+                "message": "Qwen-VL is configured",
+                "details": {"model": "qwen-vl-plus"},
+            }
+        else:
+            health_status["qwen_vl_ocr"] = {
+                "status": "unavailable",
+                "message": "DASHSCOPE_API_KEY is not configured",
+                "details": {},
+            }
+
         # 转换为旧格式以保持API兼容性
         formatted_status = {}
         for service_name, health_info in health_status.items():

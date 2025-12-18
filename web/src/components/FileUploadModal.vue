@@ -306,6 +306,7 @@ const ocrHealthStatus = ref({
   onnx_rapid_ocr: { status: 'unknown', message: '' },
   mineru_ocr: { status: 'unknown', message: '' },
   mineru_official: { status: 'unknown', message: '' },
+  qwen_vl_ocr: { status: 'unknown', message: '' },
   paddlex_ocr: { status: 'unknown', message: '' }
 });
 
@@ -422,6 +423,12 @@ const enableOcrOptions = computed(() => [
     disabled: ocrHealthStatus.value?.mineru_official?.status === 'unavailable' || ocrHealthStatus.value?.mineru_official?.status === 'error'
   },
   {
+    value: 'qwen_vl_ocr',
+    label: getQwenVLLabel(),
+    title: 'Qwen-VL OCR',
+    disabled: ocrHealthStatus.value?.qwen_vl_ocr?.status === 'unavailable' || ocrHealthStatus.value?.qwen_vl_ocr?.status === 'error'
+  },
+  {
     value: 'paddlex_ocr',
     label: getPaddleXLabel(),
     title: 'PaddleX OCR',
@@ -438,6 +445,8 @@ const selectedOcrStatus = computed(() => {
       return ocrHealthStatus.value?.mineru_ocr?.status || 'unknown';
     case 'mineru_official':
       return ocrHealthStatus.value?.mineru_official?.status || 'unknown';
+    case 'qwen_vl_ocr':
+      return ocrHealthStatus.value?.qwen_vl_ocr?.status || 'unknown';
     case 'paddlex_ocr':
       return ocrHealthStatus.value?.paddlex_ocr?.status || 'unknown';
     default:
@@ -454,6 +463,8 @@ const selectedOcrMessage = computed(() => {
       return ocrHealthStatus.value?.mineru_ocr?.message || '';
     case 'mineru_official':
       return ocrHealthStatus.value?.mineru_official?.message || '';
+    case 'qwen_vl_ocr':
+      return ocrHealthStatus.value?.qwen_vl_ocr?.message || '';
     case 'paddlex_ocr':
       return ocrHealthStatus.value?.paddlex_ocr?.message || '';
     default:
@@ -498,6 +509,19 @@ const getMinerUOfficialLabel = () => {
   };
   return `${statusIcons[status] || '❓'} MinerU Official API`;
 };
+const getQwenVLLabel = () => {
+  const status = ocrHealthStatus.value?.qwen_vl_ocr?.status || 'unknown';
+  const statusIcons = {
+    healthy: '?',
+    unavailable: '?',
+    unhealthy: '??',
+    timeout: '??',
+    error: '??',
+    unknown: '?',
+  };
+  return `${statusIcons[status] || '?'} Qwen-VL OCR`;
+};
+
 
 const getPaddleXLabel = () => {
   const status = ocrHealthStatus.value?.paddlex_ocr?.status || 'unknown';
@@ -728,7 +752,7 @@ const chunkData = async () => {
 
     if (hasImageFiles && chunkParams.value.enable_ocr === 'disable') {
       message.error({
-        content: '检测到图片文件,必须启用 OCR 才能提取文本内容。请在上方选择 OCR 方式 (RapidOCR/MinerU/MinerU Official/PaddleX) 或移除图片文件。',
+        content: '检测到图片文件,必须启用 OCR 才能提取文本内容。请在上方选择 OCR 方式 (RapidOCR/MinerU/MinerU Official/Qwen-VL/PaddleX) 或移除图片文件。',
         duration: 5,
       });
       return;
