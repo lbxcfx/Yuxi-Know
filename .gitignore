@@ -64,3 +64,13 @@ docs/vibe
 .cursorrules
 
 /models
+
+### Local test assets
+/test.jpeg
+/test/data/test.jpeg
+/wechat_2025-10-25_102107_233.png
+/test/data/患者就诊信息.xlsx
+/test/data/患者档案信息.xlsx
+/基本医保参保动员百问百答-胡.docx
+/微信图片_20251025101711_86_1.jpg
+
