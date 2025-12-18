@@ -3,17 +3,18 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from src.plugins._ocr import OCRPlugin, OCRServiceException
 from src.plugins.document_processor_base import BaseDocumentProcessor, OCRException
 
 
 class QwenVLOCRProcessor(BaseDocumentProcessor):
     def process_file(self, file_path: str, params: dict[str, Any] | None = None) -> str:
         try:
+            from src.plugins._ocr import OCRPlugin, OCRServiceException
+
             plugin = OCRPlugin()
             return plugin.process_file_qwen_vl(file_path, params=params)
         except OCRServiceException as e:
-            raise OCRException(str(e), service_name="qwen_vl_ocr", status_code=getattr(e, "error_code", None))
+            raise OCRException(str(e), service_name="qwen_vl_ocr", status_code=getattr(e, "status_code", None))
         except Exception as e:  # noqa: BLE001
             raise OCRException(f"Qwen-VL OCR failed: {e}", service_name="qwen_vl_ocr", status_code="processing_failed")
 
